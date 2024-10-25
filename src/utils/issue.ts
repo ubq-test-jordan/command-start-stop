@@ -235,10 +235,9 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
   const { reviewDelayTolerance } = context.config;
   if (!reviewDelayTolerance) return { approved: [], changes: [] };
 
-  const openedPullRequests = await getOpenedPullRequests(context, username);
+  const openedPullRequests = await getOpenedPullRequestsForUser(context, username);
   const approved = [] as typeof openedPullRequests;
   const changes = [] as unknown[];
-  const result: (typeof openedPullRequests)[number][] = [];
 
   for (let i = 0; openedPullRequests && i < openedPullRequests.length; i++) {
     const openedPullRequest = openedPullRequests[i];
