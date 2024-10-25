@@ -217,10 +217,11 @@ export function getOwnerRepoFromHtmlUrl(url: string) {
 
 export async function getAvailableOpenedPullRequests(context: Context, username: string) {
   const { reviewDelayTolerance } = context.config;
-  if (!reviewDelayTolerance) return [];
+  if (!reviewDelayTolerance) return { approved: [], changes: [] };
 
   const openedPullRequests = await getOpenedPullRequests(context, username);
-  const result = [] as typeof openedPullRequests;
+  const approved = [] as typeof openedPullRequests;
+  const changes = [] as unknown[];
 
   for (let i = 0; i < openedPullRequests.length; i++) {
     const openedPullRequest = openedPullRequests[i];
@@ -230,15 +231,23 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
     if (reviews.length > 0) {
       const approvedReviews = reviews.find((review) => review.state === "APPROVED");
       if (approvedReviews) {
-        result.push(openedPullRequest);
+        approved.push(openedPullRequest);
+      }
+    }
+
+    if (reviews.length > 0) {
+      const changesRequested = reviews.find((review) => review.state === "CHANGES_REQUESTED");
+      if (changesRequested) {
+        changes.push(changesRequested);
       }
     }
 
     if (reviews.length === 0 && new Date().getTime() - new Date(openedPullRequest.created_at).getTime() >= getTimeValue(reviewDelayTolerance)) {
-      result.push(openedPullRequest);
+      approved.push(openedPullRequest);
     }
   }
-  return result;
+
+  return { approved, changes };
 }
 
 export function getTimeValue(timeString: string): number {
