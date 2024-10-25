@@ -273,6 +273,7 @@ export function getOwnerRepoFromHtmlUrl(url: string) {
 export async function getAvailableOpenedPullRequests(context: Context, username: string) {
   const { reviewDelayTolerance } = context.config;
   if (!reviewDelayTolerance) return { approved: [], changes: [] };
+  if (!reviewDelayTolerance) return { approved: [], changes: [] };
 
   const openedPullRequests = await getOpenedPullRequestsForUser(context, username);
   const approved = [] as unknown[];

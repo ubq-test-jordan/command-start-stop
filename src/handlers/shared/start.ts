@@ -162,6 +162,8 @@ async function handleTaskLimitChecks(username: string, context: Context, logger:
   const uniqueIssuesAndPrs = new Set([...assignedIssues, ...changes]);
   const adjustedAssignedIssues = uniqueIssuesAndPrs.size - approved.length;
 
+  const adjustedAssignedIssues = assignedIssues.length - approved.length + changes.length;
+
   // check for max and enforce max
   if (Math.abs(adjustedAssignedIssues) >= limit) {
     logger.error(username === sender ? "You have reached your max task limit" : `${username} has reached their max task limit`, {
