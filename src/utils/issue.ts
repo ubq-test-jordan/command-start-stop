@@ -236,7 +236,7 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
   if (!reviewDelayTolerance) return { approved: [], changes: [] };
 
   const openedPullRequests = await getOpenedPullRequestsForUser(context, username);
-  const approved = [] as typeof openedPullRequests;
+  const approved = [] as unknown[];
   const changes = [] as unknown[];
 
   for (let i = 0; openedPullRequests && i < openedPullRequests.length; i++) {
@@ -248,7 +248,7 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
     if (reviews.length > 0) {
       const approvedReviews = reviews.find((review) => review.state === "APPROVED");
       if (approvedReviews) {
-        approved.push(openedPullRequest);
+        approved.push(approvedReviews);
       }
     }
 
