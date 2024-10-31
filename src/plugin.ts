@@ -31,9 +31,9 @@ export async function startStopTask(inputs: PluginInputs, env: Env) {
       case "issues.assigned":
         return await userSelfAssign(context as Context<"issues.assigned">);
       case "pull_request.opened":
-        return await userPullRequest(context as Context<"pull_request.edited">);
-      case "pull_request.edited":
         return await userPullRequest(context as Context<"pull_request.opened">);
+      case "pull_request.edited":
+        return await userPullRequest(context as Context<"pull_request.edited">);
       case "issues.unassigned":
         return await userUnassigned(context);
       default:
