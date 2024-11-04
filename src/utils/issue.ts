@@ -176,7 +176,7 @@ export async function addAssignees(context: Context, issueNo: number, assignees:
 async function getAllPullRequests(context: Context, state: Endpoints["GET /repos/{owner}/{repo}/pulls"]["parameters"]["state"] = "open", username: string) {
   const { payload } = context;
   const query: RestEndpointMethodTypes["search"]["issuesAndPullRequests"]["parameters"] = {
-    q: `org:${payload.repository.owner.login} author:${username} state:${state}`,
+    q: `org:${payload.repository.owner.login} author:${username} state:${state} is:pr`,
     per_page: 100,
     order: "desc",
     sort: "created",
@@ -248,14 +248,14 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
     if (reviews.length > 0) {
       const approvedReviews = reviews.find((review) => review.state === "APPROVED");
       if (approvedReviews) {
-        approved.push(approvedReviews);
+        approved.push(openedPullRequest);
       }
     }
 
     if (reviews.length > 0) {
       const changesRequested = reviews.find((review) => review.state === "CHANGES_REQUESTED");
       if (changesRequested) {
-        changes.push(changesRequested);
+        changes.push(openedPullRequest);
       }
     }
 
