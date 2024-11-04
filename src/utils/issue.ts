@@ -220,9 +220,12 @@ async function getAllPullRequestReviews(context: Context, pullNumber: number, ow
           }>
         ).filter((event) => event.event === "review_requested" || event.event === "review_request_removed")
     );
-  } catch (error) {
-    console.error("Error fetching review request timeline events:", error);
-    return [];
+  } catch (err) {
+    if (err && typeof err === "object" && "status" in err && err.status === 404) {
+      return [];
+    } else {
+      throw new Error(context.logger.error("Fetching all pull request reviews failed!", { error: err as Error }).logMessage.raw);
+    }
   }
 }
 
