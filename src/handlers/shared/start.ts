@@ -159,8 +159,8 @@ async function handleTaskLimitChecks(username: string, context: Context, logger:
   const { approved, changes } = await getAvailableOpenedPullRequests(context, username);
   const assignedIssues = await getAssignedIssues(context, username);
   const { limit } = await getUserRoleAndTaskLimit(context, username);
-
-  const adjustedAssignedIssues = assignedIssues.length - approved.length + changes.length;
+  const uniqueIssuesAndPrs = new Set([...assignedIssues, ...changes]);
+  const adjustedAssignedIssues = uniqueIssuesAndPrs.size - approved.length;
 
   // check for max and enforce max
   if (Math.abs(adjustedAssignedIssues) >= limit) {

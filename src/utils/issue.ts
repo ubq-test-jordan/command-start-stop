@@ -221,34 +221,57 @@ export async function getAllPullRequestReviews(context: Context, pullNumber: num
 }
 
 async function getReviewRequestsTimeline(context: Context, pullNumber: number, owner: string, repo: string) {
-  const events = [];
-  let page = 1;
-  const perPage = 100;
   try {
-    while (true) {
-      const response = await context.octokit.request(`GET /repos/${owner}/${repo}/issues/${pullNumber}/timeline`, {
+    return await context.octokit.paginate(
+      context.octokit.rest.issues.listEventsForTimeline,
+      {
         owner,
         repo,
         issue_number: pullNumber,
-        page,
-        per_page: perPage,
-      });
-
-      const reviewRequestEvents = response.data.filter(
-        (event: { event: string }) => event.event === "review_requested" || event.event === "review_request_removed"
-      );
-
-      events.push(...reviewRequestEvents);
-
-      if (response.data.length < perPage) break;
-      page++;
-    }
-
-    return events;
+        per_page: 100,
+      },
+      (response) =>
+        (
+          response.data as Array<{
+            created_at: string | number | Date;
+            event: string;
+          }>
+        ).filter((event) => event.event === "review_requested" || event.event === "review_request_removed")
+    );
   } catch (error) {
     console.error("Error fetching review request timeline events:", error);
     return [];
   }
+}
+
+async function getLatestReviewStatus(context: Context, owner: string, repo: string, pullNumber: number) {
+  const query = `
+    query($owner: String!, $repo: String!, $pullNumber: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pullNumber) {
+          reviews(last: 10) {
+            nodes {
+              state
+              submittedAt
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const params = { owner, repo, pullNumber };
+  const result = await context.octokit.graphql(query, params);
+
+  const reviewNodes = result.repository.pullRequest.reviews.nodes;
+
+  // Check if any review has "CHANGES_REQUESTED"
+  const hasUnresolvedChanges = reviewNodes.some((review: { state: string }) => review.state === "CHANGES_REQUESTED");
+
+  return {
+    latestReview: reviewNodes[reviewNodes.length - 1],
+    hasUnresolvedChanges,
+  };
 }
 
 export function getOwnerRepoFromHtmlUrl(url: string) {
@@ -274,32 +297,24 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
     const openedPullRequest = openedPullRequests[i];
     if (!openedPullRequest) continue;
     const { owner, repo } = getOwnerRepoFromHtmlUrl(openedPullRequest.html_url);
-    const reviews = await getAllPullRequestReviews(context, openedPullRequest.number, owner, repo);
 
-    // Determine the latest review state
-    const latestReview = reviews[reviews.length - 1];
+    const { latestReview, hasUnresolvedChanges } = await getLatestReviewStatus(context, owner, repo, openedPullRequest.number);
     const latestReviewState = latestReview?.state;
 
-    if (latestReviewState === "APPROVED") {
+    if (latestReviewState === "APPROVED" || !hasUnresolvedChanges) {
       approved.push(openedPullRequest);
       continue;
     }
 
     if (latestReviewState === "CHANGES_REQUESTED") {
       changes.push(openedPullRequest);
+      const lastChangesRequestedTime = latestReview?.submittedAt ? new Date(latestReview.submittedAt).getTime() : null;
 
-      // Track the time of the last "CHANGES_REQUESTED"s
-      const lastChangesRequestedTime = latestReview.submitted_at ? new Date(latestReview.submitted_at).getTime() : null;
-
-      // Fetch timeline or comments to check if reviewer has been re-requested
       const reviewRequests = await getReviewRequestsTimeline(context, openedPullRequest.number, owner, repo);
-
-      // Find if any review request was made after the last changes requested
       const isReviewRequestedAfterChanges = lastChangesRequestedTime
         ? reviewRequests.some((request) => new Date(request.created_at).getTime() > lastChangesRequestedTime)
         : false;
 
-      // If reviewer was re-requested after changes were requested, mark as completed and increment approved count
       if (isReviewRequestedAfterChanges) {
         approved.push(openedPullRequest);
         changes.pop();
@@ -307,7 +322,7 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
       }
     }
 
-    if (reviews.length === 0 && new Date().getTime() - new Date(openedPullRequest.created_at).getTime() >= getTimeValue("1m")) {
+    if (!latestReview && new Date().getTime() - new Date(openedPullRequest.created_at).getTime() >= getTimeValue(reviewDelayTolerance)) {
       approved.push(openedPullRequest);
     }
   }
