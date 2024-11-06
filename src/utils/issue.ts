@@ -176,7 +176,7 @@ export async function addAssignees(context: Context, issueNo: number, assignees:
 async function getAllPullRequests(context: Context, state: Endpoints["GET /repos/{owner}/{repo}/pulls"]["parameters"]["state"] = "open", username: string) {
   const { payload } = context;
   const query: RestEndpointMethodTypes["search"]["issuesAndPullRequests"]["parameters"] = {
-    q: `org:${payload.repository.owner.login} author:${username} state:${state}`,
+    q: `org:${payload.repository.owner.login} author:${username} state:${state} is:pr`,
     per_page: 100,
     order: "desc",
     sort: "created",
@@ -224,6 +224,24 @@ export async function getAllPullRequestReviews(context: Context, pullNumber: num
   }
 }
 
+async function getReviewRequestsTimeline(context: Context, pullNumber: number, owner: string, repo: string) {
+  try {
+    const events = (await context.octokit.paginate(`GET /repos/${owner}/${repo}/issues/${pullNumber}/timeline`, {
+      owner,
+      repo,
+      issue_number: pullNumber,
+    })) as {
+      created_at: string | number | Date;
+      event: string;
+    }[];
+
+    return events.filter((event: { event: string }) => event.event === "review_requested" || event.event === "review_request_removed");
+  } catch (error) {
+    console.error("Error fetching review request timeline events:", error);
+    return [];
+  }
+}
+
 export function getOwnerRepoFromHtmlUrl(url: string) {
   const parts = url.split("/");
   if (parts.length < 5) {
@@ -237,10 +255,11 @@ export function getOwnerRepoFromHtmlUrl(url: string) {
 
 export async function getAvailableOpenedPullRequests(context: Context, username: string) {
   const { reviewDelayTolerance } = context.config;
-  if (!reviewDelayTolerance) return [];
+  if (!reviewDelayTolerance) return { approved: [], changes: [] };
 
   const openedPullRequests = await getOpenedPullRequestsForUser(context, username);
-  const result: (typeof openedPullRequests)[number][] = [];
+  const approved = [] as unknown[];
+  const changes = [] as unknown[];
 
   for (let i = 0; openedPullRequests && i < openedPullRequests.length; i++) {
     const openedPullRequest = openedPullRequests[i];
@@ -248,18 +267,42 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
     const { owner, repo } = getOwnerRepoFromHtmlUrl(openedPullRequest.html_url);
     const reviews = await getAllPullRequestReviews(context, openedPullRequest.number, owner, repo);
 
-    if (reviews.length > 0) {
-      const approvedReviews = reviews.find((review) => review.state === "APPROVED");
-      if (approvedReviews) {
-        result.push(openedPullRequest);
+    // Determine the latest review state
+    const latestReview = reviews[reviews.length - 1];
+    const latestReviewState = latestReview?.state;
+
+    if (latestReviewState === "APPROVED") {
+      approved.push(openedPullRequest);
+      continue;
+    }
+
+    if (latestReviewState === "CHANGES_REQUESTED") {
+      changes.push(openedPullRequest);
+
+      // Track the time of the last "CHANGES_REQUESTED"s
+      const lastChangesRequestedTime = latestReview.submitted_at ? new Date(latestReview.submitted_at).getTime() : null;
+
+      // Fetch timeline or comments to check if reviewer has been re-requested
+      const reviewRequests = await getReviewRequestsTimeline(context, openedPullRequest.number, owner, repo);
+
+      // Find if any review request was made after the last changes requested
+      const isReviewRequestedAfterChanges = lastChangesRequestedTime
+        ? reviewRequests.some((request) => new Date(request.created_at).getTime() > lastChangesRequestedTime)
+        : false;
+
+      if (isReviewRequestedAfterChanges) {
+        approved.push(openedPullRequest);
+        changes.pop();
+        continue;
       }
     }
 
     if (reviews.length === 0 && new Date().getTime() - new Date(openedPullRequest.created_at).getTime() >= getTimeValue(reviewDelayTolerance)) {
-      result.push(openedPullRequest);
+      approved.push(openedPullRequest);
     }
   }
-  return result;
+
+  return { approved, changes };
 }
 
 export function getTimeValue(timeString: string): number {
