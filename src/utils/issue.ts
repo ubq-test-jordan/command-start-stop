@@ -2,7 +2,7 @@ import { RestEndpointMethodTypes } from "@octokit/rest";
 import { Endpoints } from "@octokit/types";
 import ms from "ms";
 import { Context } from "../types/context";
-import { GitHubIssueSearch, Review } from "../types/payload";
+import { GitHubIssueSearch } from "../types/payload";
 import { getLinkedPullRequests, GetLinkedResults } from "./get-linked-prs";
 import { getAllPullRequestsFallback, getAssignedIssuesFallback } from "./get-pull-requests-fallback";
 
@@ -202,25 +202,7 @@ export async function getAllPullRequestsWithRetry(
   }
 }
 
-export async function getAllPullRequestReviews(context: Context, pullNumber: number, owner: string, repo: string) {
-  const {
-    config: { rolesWithReviewAuthority },
-  } = context;
-  try {
-    return (
-      await context.octokit.paginate(context.octokit.rest.pulls.listReviews, {
-        owner,
-        repo,
-        pull_number: pullNumber,
-        per_page: 100,
-      })
-    ).filter((review) => rolesWithReviewAuthority.includes(review.author_association)) as Review[];
-  } catch (err: unknown) {
-    throw new Error(context.logger.error("Fetching all pull request reviews failed!", { error: err as Error }).logMessage.raw);
-  }
-}
-
-async function getReviewRequestsTimeline(context: Context, pullNumber: number, owner: string, repo: string) {
+async function getAllPullRequestReviews(context: Context, pullNumber: number, owner: string, repo: string) {
   try {
     return await context.octokit.paginate(
       context.octokit.rest.issues.listEventsForTimeline,
@@ -310,7 +292,7 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
       changes.push(openedPullRequest);
       const lastChangesRequestedTime = latestReview?.submittedAt ? new Date(latestReview.submittedAt).getTime() : null;
 
-      const reviewRequests = await getReviewRequestsTimeline(context, openedPullRequest.number, owner, repo);
+      const reviewRequests = await getAllPullRequestReviews(context, openedPullRequest.number, owner, repo);
       const isReviewRequestedAfterChanges = lastChangesRequestedTime
         ? reviewRequests.some((request) => new Date(request.created_at).getTime() > lastChangesRequestedTime)
         : false;
