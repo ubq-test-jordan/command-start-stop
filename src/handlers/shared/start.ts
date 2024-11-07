@@ -156,15 +156,16 @@ async function fetchUserIds(context: Context, username: string[]) {
 }
 
 async function handleTaskLimitChecks(username: string, context: Context, logger: Context["logger"], sender: string) {
-  const openedPullRequests = await getAvailableOpenedPullRequests(context, username);
+  const { approved, changes } = await getAvailableOpenedPullRequests(context, username);
   const assignedIssues = await getAssignedIssues(context, username);
   const { limit } = await getUserRoleAndTaskLimit(context, username);
+  const adjustedAssignedIssues = assignedIssues.length - approved.length + changes.length;
 
   // check for max and enforce max
-  if (Math.abs(assignedIssues.length - openedPullRequests.length) >= limit) {
+  if (Math.abs(adjustedAssignedIssues) >= limit) {
     logger.error(username === sender ? "You have reached your max task limit" : `${username} has reached their max task limit`, {
       assignedIssues: assignedIssues.length,
-      openedPullRequests: openedPullRequests.length,
+      openedPullRequests: adjustedAssignedIssues,
       limit,
     });
 
