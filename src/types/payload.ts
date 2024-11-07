@@ -8,6 +8,18 @@ export type TimelineEvents = RestEndpointMethodTypes["issues"]["listEventsForTim
 export type Assignee = Issue["assignee"];
 export type GitHubIssueSearch = RestEndpointMethodTypes["search"]["issuesAndPullRequests"]["response"]["data"];
 
+export type PullRequestConversationsResponse = {
+  repository: {
+    pullRequest: {
+      reviewThreads: {
+        nodes: {
+          isResolved: boolean;
+        }[];
+      };
+    };
+  };
+};
+
 export type Sender = { login: string; id: number };
 
 export const ISSUE_TYPE = {

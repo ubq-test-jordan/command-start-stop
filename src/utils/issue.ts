@@ -2,7 +2,7 @@ import { RestEndpointMethodTypes } from "@octokit/rest";
 import { Endpoints } from "@octokit/types";
 import ms from "ms";
 import { Context } from "../types/context";
-import { GitHubIssueSearch, Review } from "../types/payload";
+import { GitHubIssueSearch, PullRequestConversationsResponse, Review } from "../types/payload";
 import { getLinkedPullRequests, GetLinkedResults } from "./get-linked-prs";
 import { getAllPullRequestsFallback, getAssignedIssuesFallback } from "./get-pull-requests-fallback";
 
@@ -226,20 +226,49 @@ export async function getAllPullRequestReviews(context: Context, pullNumber: num
 
 async function getReviewRequestsTimeline(context: Context, pullNumber: number, owner: string, repo: string) {
   try {
-    const events = (await context.octokit.paginate(`GET /repos/${owner}/${repo}/issues/${pullNumber}/timeline`, {
+    const events = await context.octokit.paginate(context.octokit.rest.issues.listEventsForTimeline, {
       owner,
       repo,
       issue_number: pullNumber,
-    })) as {
-      created_at: string | number | Date;
-      event: string;
-    }[];
-
-    return events.filter((event: { event: string }) => event.event === "review_requested" || event.event === "review_request_removed");
+      per_page: 100,
+    });
+    return events
+      .filter(
+        (
+          event
+        ): event is {
+          created_at: string | number | Date;
+          event: string;
+        } => typeof event.event === "string"
+      )
+      .filter((event) => event.event === "review_requested" || event.event === "review_request_removed");
   } catch (error) {
     console.error("Error fetching review request timeline events:", error);
     return [];
   }
+}
+
+async function getPullRequestConversations(context: Context, owner: string, repo: string, pullNumber: number) {
+  const query = `
+    query($owner: String!, $repo: String!, $pullNumber: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $pullNumber) {
+          reviewThreads(first: 100) {
+            nodes {
+              isResolved
+            }
+          }
+        }
+      }
+    }
+  `;
+
+  const params = { owner, repo, pullNumber };
+  const result: PullRequestConversationsResponse = await context.octokit.graphql(query, {
+    ...params,
+  });
+
+  return result.repository.pullRequest.reviewThreads.nodes;
 }
 
 export function getOwnerRepoFromHtmlUrl(url: string) {
@@ -271,7 +300,16 @@ export async function getAvailableOpenedPullRequests(context: Context, username:
     const latestReview = reviews[reviews.length - 1];
     const latestReviewState = latestReview?.state;
 
+    // Check if all conversations have been reviewed
+    const conversations = await getPullRequestConversations(context, owner, repo, openedPullRequest.number);
+    const isResolved = conversations.every((thread: { isResolved: unknown }) => thread.isResolved);
+
     if (latestReviewState === "APPROVED") {
+      approved.push(openedPullRequest);
+      continue;
+    }
+
+    if (isResolved) {
       approved.push(openedPullRequest);
       continue;
     }
